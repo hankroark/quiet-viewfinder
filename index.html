@@ -1,0 +1,656 @@
+<title>Quiet Viewfinder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-height camera app. Viewport on top, a scrolling control sheet below. Single dark look by choice. */
+:root {
+  --ink: #0e1011;
+  --sheet: #16191a;
+  --raise: #1f2324;
+  --line: #2b3032;
+  --paper: #e7e4dd;
+  --muted: #8d9290;
+  --amber: #d6b088;
+  --amber-ink: #2a1f14;
+  --font-ui: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--ink); color: var(--paper); font-family: var(--font-ui); font-size: 14px;
+  overflow: hidden; -webkit-tap-highlight-color: transparent;
+}
+.app { height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.stage {
+  position: relative; min-height: 0; display: grid; place-items: center; overflow: hidden;
+  background: #050606;
+}
+#view { display: block; touch-action: none; cursor: crosshair; }
+.hud {
+  position: absolute; top: 10px; left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
+  display: flex; justify-content: space-between; gap: 8px; pointer-events: none;
+  font-family: var(--font-data); font-size: 11px; letter-spacing: 0.04em; color: var(--paper);
+}
+.hud span { background: rgba(14,16,17,0.62); padding: 4px 7px; border-radius: 4px; }
+.hud .live { color: var(--amber); }
+.progress { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--amber); transition: width 0.08s linear; }
+.notice {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: min(92%, 420px);
+  background: rgba(14,16,17,0.86); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px;
+  font-size: 12.5px; line-height: 1.4; color: var(--paper); text-align: center;
+}
+.sheet {
+  background: var(--sheet); border-top: 1px solid var(--line); max-height: 52vh; overflow-y: auto;
+  padding-block: 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 12px;
+}
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.row.main { flex-wrap: nowrap; }
+.seg { display: inline-flex; background: var(--raise); border: 1px solid var(--line); border-radius: 7px; padding: 2px; }
+.seg button {
+  font: 500 13px var(--font-ui); color: var(--muted); background: transparent; border: 0; border-radius: 5px; padding: 7px 11px;
+}
+.seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); }
+button.btn {
+  font: 500 13px var(--font-ui); color: var(--paper); background: var(--raise); border: 1px solid var(--line);
+  border-radius: 7px; padding: 8px 12px; white-space: nowrap;
+}
+button.primary { background: var(--amber); color: var(--amber-ink); border-color: var(--amber); font-weight: 600; min-width: 108px; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+button:disabled { opacity: 0.45; }
+.time { flex: 1; min-width: 0; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.val { font-family: var(--font-data); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--paper); min-width: 44px; text-align: right; }
+input[type="range"] { width: 100%; min-width: 0; accent-color: var(--amber); height: 26px; }
+select {
+  font: 500 13px var(--font-ui); color: var(--paper); background: var(--raise); border: 1px solid var(--line);
+  border-radius: 7px; padding: 7px 8px; max-width: 100%;
+}
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font: 500 13px var(--font-ui); color: var(--paper); background: transparent; border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 12px;
+}
+.chip[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+details { border-top: 1px solid var(--line); padding-top: 10px; }
+summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--paper); list-style: none; display: flex; justify-content: space-between; }
+summary::after { content: "Show"; font-weight: 400; color: var(--muted); }
+details[open] summary::after { content: "Hide"; }
+.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 22px; margin-top: 10px; }
+.group { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.group h3 { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--amber); font-weight: 600; }
+.ctl { display: grid; grid-template-columns: 104px 1fr 44px; align-items: center; gap: 8px; }
+.ctl label { font-size: 13px; color: var(--paper); }
+.hint { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 0; max-width: 62ch; }
+#vid { position: absolute; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .progress { transition: none; } }
+</style>
+
+<div class="app">
+  <div class="stage" id="stage">
+    <canvas id="view" aria-label="Live preview. Tap to set white balance or glow center."></canvas>
+    <div class="hud" aria-live="polite">
+      <span id="hudSource">Demo scene</span>
+      <span id="hudExpo" class="live">Rolling 4.0 s</span>
+    </div>
+    <div class="progress" id="progress"></div>
+    <div class="notice" id="notice" hidden></div>
+    <video id="vid" playsinline muted loop></video>
+  </div>
+
+  <div class="sheet">
+    <div class="row main">
+      <div class="seg" role="group" aria-label="Exposure mode">
+        <button id="modeRolling" aria-pressed="true">Rolling</button>
+        <button id="modeShutter" aria-pressed="false">Shutter</button>
+      </div>
+      <div class="time">
+        <span class="label">Time</span>
+        <input id="tSlider" type="range" min="0" max="100" step="0.5" value="47" aria-label="Exposure time">
+        <span class="val" id="tVal">4.0 s</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="btn primary" id="shoot">Freeze</button>
+      <button class="btn" id="compare">Hold: original</button>
+      <button class="btn" id="save">Save still</button>
+      <div class="seg" role="group" aria-label="What a tap on the image sets">
+        <button id="tapWB" aria-pressed="true">Tap: WB</button>
+        <button id="tapGlow" aria-pressed="false">Tap: Glow</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="btn" id="camBtn">Start camera</button>
+      <select id="lens" aria-label="Lens" hidden></select>
+      <button class="btn" id="clipBtn">Load clip</button>
+      <button class="btn" id="demoBtn">Demo</button>
+      <input id="clipInput" type="file" accept="video/*" hidden>
+    </div>
+
+    <div class="row">
+      <span class="label">Look</span>
+      <div class="chips" id="presets"></div>
+    </div>
+
+    <details id="adjust">
+      <summary>Adjust</summary>
+      <div class="groups" id="groups"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="resetWB">Reset white balance</button>
+      </div>
+    </details>
+
+    <p class="hint">Tap the sky or water to neutralize it. Rolling blends the last few seconds continuously, like a live ND preview. Shutter starts a fresh exposure and holds the result so you can keep adjusting the look. Keep the phone on a tripod or clamp.</p>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+// ---------- settings model ----------
+const SLIDERS = [
+  { g: "Color", id: "sat", label: "Saturation", min: 0, max: 1.5, step: 0.01, def: 1 },
+  { g: "Color", id: "coolKeep", label: "Blues & greens", min: 0, max: 1, step: 0.01, def: 1 },
+  { g: "Color", id: "warmKeep", label: "Warm accents", min: 0, max: 1.2, step: 0.01, def: 1 },
+  { g: "Color", id: "temp", label: "Temperature", min: -1, max: 1, step: 0.01, def: 0 },
+  { g: "Color", id: "tint", label: "Tint", min: -1, max: 1, step: 0.01, def: 0 },
+  { g: "Tone", id: "expo", label: "Exposure", min: -2, max: 2, step: 0.01, def: 0, fmt: v => (v >= 0 ? "+" : "") + v.toFixed(2) },
+  { g: "Tone", id: "black", label: "Black lift", min: 0, max: 0.4, step: 0.005, def: 0, fmt: v => Math.round(v * 255) },
+  { g: "Tone", id: "white", label: "White cap", min: 0.6, max: 1, step: 0.005, def: 1, fmt: v => Math.round(v * 255) },
+  { g: "Tone", id: "contrast", label: "Contrast", min: -0.6, max: 1, step: 0.01, def: 0 },
+  { g: "Tone", id: "warmth", label: "Shadow warmth", min: -1, max: 1.5, step: 0.01, def: 0 },
+  { g: "Atmosphere", id: "soften", label: "Soften", min: 0, max: 0.6, step: 0.01, def: 0 },
+  { g: "Atmosphere", id: "glow", label: "Glow", min: 0, max: 1, step: 0.01, def: 0 },
+  { g: "Atmosphere", id: "topD", label: "Darken sky", min: 0, max: 0.8, step: 0.01, def: 0 },
+  { g: "Atmosphere", id: "botD", label: "Darken water", min: 0, max: 0.8, step: 0.01, def: 0 },
+];
+
+const PRESETS = {
+  "Off": { t: 4, s: {} },
+  "Snow": { t: 3, s: { sat: 1, coolKeep: 0.08, warmKeep: 0.55, expo: 0.35, black: 0.13, white: 0.955, contrast: 0.12, warmth: 0.35, soften: 0.12, glow: 0, topD: 0.12, botD: 0 } },
+  "Still water": { t: 8, s: { sat: 1, coolKeep: 0.04, warmKeep: 0.5, expo: 0.2, black: 0.1, white: 0.95, contrast: 0.22, warmth: 0.3, soften: 0.2, glow: 0.28, topD: 0.25, botD: 0.3 } },
+  "Fog": { t: 6, s: { sat: 0.9, coolKeep: 0.12, warmKeep: 0.65, expo: 0.15, black: 0.2, white: 0.93, contrast: -0.15, warmth: 0.45, soften: 0.35, glow: 0.18, topD: 0.08, botD: 0.08 } },
+  "Moods": { t: 15, s: { sat: 1, coolKeep: 0.15, warmKeep: 0.75, expo: -0.8, black: 0.035, white: 0.74, contrast: 0.35, warmth: 0.5, soften: 0.1, glow: 0.35, topD: 0.4, botD: 0.35 } },
+};
+
+const state = { mode: "rolling", T: 4, tapMode: "wb", preset: "Still water", wb: [1, 1, 1], glowC: [0.5, 0.5] };
+const vals = {};
+SLIDERS.forEach(s => vals[s.id] = s.def);
+
+function store(k, v) { try { localStorage.setItem("qv:" + k, JSON.stringify(v)); } catch (e) {} }
+function load(k) { try { const v = localStorage.getItem("qv:" + k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+
+// ---------- DOM ----------
+const $ = id => document.getElementById(id);
+const canvas = $("view"), stage = $("stage"), video = $("vid");
+const notice = $("notice");
+let noticeTimer = 0;
+function say(msg, ms = 5000) {
+  notice.textContent = msg; notice.hidden = false;
+  clearTimeout(noticeTimer);
+  if (ms) noticeTimer = setTimeout(() => notice.hidden = true, ms);
+}
+
+const tFromSlider = v => 0.25 * Math.pow(120, v / 100);
+const sliderFromT = t => 100 * Math.log(t / 0.25) / Math.log(120);
+const fmtT = t => t < 10 ? t.toFixed(1) + " s" : Math.round(t) + " s";
+
+// build adjust sliders
+const groupsEl = $("groups");
+const groupMap = {};
+SLIDERS.forEach(s => {
+  if (!groupMap[s.g]) {
+    const g = document.createElement("div"); g.className = "group";
+    g.innerHTML = `<h3>${s.g}</h3>`; groupsEl.appendChild(g); groupMap[s.g] = g;
+  }
+  const row = document.createElement("div"); row.className = "ctl";
+  row.innerHTML = `<label for="s_${s.id}">${s.label}</label><input id="s_${s.id}" type="range" min="${s.min}" max="${s.max}" step="${s.step}"><span class="val" id="v_${s.id}"></span>`;
+  groupMap[s.g].appendChild(row);
+  const input = row.querySelector("input");
+  input.addEventListener("input", () => { vals[s.id] = parseFloat(input.value); syncSliders(); markCustom(); needGrade = true; store("vals", vals); });
+  input.addEventListener("dblclick", () => { vals[s.id] = s.def; syncSliders(); needGrade = true; });
+});
+function syncSliders() {
+  SLIDERS.forEach(s => {
+    $("s_" + s.id).value = vals[s.id];
+    $("v_" + s.id).textContent = s.fmt ? s.fmt(vals[s.id]) : vals[s.id].toFixed(2);
+  });
+}
+
+// presets
+const presetsEl = $("presets");
+Object.keys(PRESETS).forEach(name => {
+  const b = document.createElement("button"); b.className = "chip"; b.textContent = name; b.dataset.name = name;
+  b.addEventListener("click", () => applyPreset(name));
+  presetsEl.appendChild(b);
+});
+function markPresetButtons() { presetsEl.querySelectorAll(".chip").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.name === state.preset))); }
+function markCustom() { state.preset = null; markPresetButtons(); }
+function applyPreset(name) {
+  const p = PRESETS[name];
+  SLIDERS.forEach(s => vals[s.id] = (s.id in p.s) ? p.s[s.id] : s.def);
+  state.preset = name; setT(p.t);
+  syncSliders(); markPresetButtons(); needGrade = true; store("vals", vals); store("preset", name);
+}
+
+// time + mode
+function setT(t) { state.T = t; $("tSlider").value = sliderFromT(t); $("tVal").textContent = fmtT(t); updateHud(); store("T", t); }
+$("tSlider").addEventListener("input", e => setT(tFromSlider(parseFloat(e.target.value))));
+
+function setMode(m) {
+  state.mode = m;
+  $("modeRolling").setAttribute("aria-pressed", String(m === "rolling"));
+  $("modeShutter").setAttribute("aria-pressed", String(m === "shutter"));
+  held = false; exposing = false; setProgress(0);
+  resetAccum = true; updateShootLabel(); updateHud();
+}
+$("modeRolling").addEventListener("click", () => setMode("rolling"));
+$("modeShutter").addEventListener("click", () => setMode("shutter"));
+
+let held = false, exposing = false, expoStart = 0, expoN = 0;
+function updateShootLabel() {
+  const b = $("shoot");
+  if (state.mode === "rolling") b.textContent = held ? "Resume" : "Freeze";
+  else b.textContent = exposing ? "Stop" : (held ? "Expose again" : "Expose");
+}
+$("shoot").addEventListener("click", () => {
+  if (state.mode === "rolling") { held = !held; }
+  else if (exposing) { exposing = false; held = true; }
+  else { exposing = true; held = false; expoN = 0; expoStart = performance.now(); resetAccum = true; }
+  updateShootLabel(); updateHud();
+});
+function setProgress(f) { $("progress").style.width = (Math.min(1, f) * 100) + "%"; }
+
+function updateHud(elapsed) {
+  const el = $("hudExpo");
+  if (state.mode === "rolling") el.textContent = held ? "Frozen" : "Rolling " + fmtT(state.T);
+  else if (exposing) el.textContent = "Exposing " + (elapsed || 0).toFixed(1) + " / " + fmtT(state.T);
+  else el.textContent = held ? "Exposure " + fmtT(lastExposure) : "Shutter ready · live";
+}
+let lastExposure = 0;
+
+// tap mode
+function setTap(m) {
+  state.tapMode = m;
+  $("tapWB").setAttribute("aria-pressed", String(m === "wb"));
+  $("tapGlow").setAttribute("aria-pressed", String(m === "glow"));
+}
+$("tapWB").addEventListener("click", () => setTap("wb"));
+$("tapGlow").addEventListener("click", () => setTap("glow"));
+$("resetWB").addEventListener("click", () => { state.wb = [1, 1, 1]; needGrade = true; say("White balance reset", 1800); });
+
+// compare
+let bypass = false;
+const cmp = $("compare");
+const on = () => { bypass = true; needGrade = true; }, off = () => { bypass = false; needGrade = true; };
+cmp.addEventListener("pointerdown", on); cmp.addEventListener("pointerup", off);
+cmp.addEventListener("pointerleave", off); cmp.addEventListener("pointercancel", off);
+cmp.addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") on(); });
+cmp.addEventListener("keyup", off);
+
+// ---------- WebGL ----------
+const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true, antialias: false, premultipliedAlpha: false });
+if (!gl) { say("This browser has no WebGL2, which the preview needs.", 0); return; }
+const hasFloat = !!(gl.getExtension("EXT_color_buffer_float") || gl.getExtension("EXT_color_buffer_half_float"));
+
+const VS = `#version 300 es
+out vec2 uv;
+void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2); uv = p; gl_Position = vec4(p*2.0-1.0,0.0,1.0); }`;
+
+const COMMON = `
+vec3 toLin(vec3 c){ return mix(c/12.92, pow((c+0.055)/1.055, vec3(2.4)), step(0.04045, c)); }
+vec3 toSrgb(vec3 c){ return mix(c*12.92, 1.055*pow(c, vec3(1.0/2.4))-0.055, step(0.0031308, c)); }`;
+
+const FS_ACC = `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D src; uniform sampler2D prev; uniform float alpha;
+${COMMON}
+void main(){
+  vec3 s = toLin(texture(src, vec2(uv.x, 1.0-uv.y)).rgb);
+  vec3 p = textureLod(prev, uv, 0.0).rgb;
+  o = vec4(mix(p, s, alpha), 1.0);
+}`;
+
+const FS_GRADE = `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D acc;
+uniform vec3 gains; uniform float expo, soften, blurLod, glow, aspect, topD, botD;
+uniform vec2 glowC;
+uniform float sat, coolKeep, warmKeep, contrast, blackOut, whiteOut, warmth, bypass;
+${COMMON}
+vec3 rgb2hsv(vec3 c){
+  vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+  vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y);
+  return vec3(abs(q.z + (q.w - q.y)/(6.0*d + 1e-10)), d/(q.x + 1e-10), q.x);
+}
+float sh(float x){ return x < 0.8 ? x : 0.8 + 0.2*(1.0 - exp(-(x-0.8)/0.2)); }
+void main(){
+  vec2 t = vec2(uv.x, 1.0-uv.y);
+  vec3 c = textureLod(acc, uv, 0.0).rgb;
+  if (bypass > 0.5) { o = vec4(toSrgb(clamp(c, 0.0, 1.0)), 1.0); return; }
+  vec3 b = textureLod(acc, uv, blurLod).rgb;
+  c = mix(c, b, soften);
+  c *= gains * exp2(expo);
+  vec2 d = vec2((t.x - glowC.x)*aspect, t.y - glowC.y);
+  c *= 1.0 + glow * 1.4 * exp(-dot(d,d)/(2.0*0.22*0.22));
+  c *= 1.0 - topD * smoothstep(0.55, 0.0, t.y);
+  c *= 1.0 - botD * smoothstep(0.45, 1.0, t.y);
+  c = vec3(sh(c.r), sh(c.g), sh(c.b));
+  vec3 s = toSrgb(clamp(c, 0.0, 1.0));
+  float l = dot(s, vec3(0.2126, 0.7152, 0.0722));
+  float lc = clamp(mix(l, smoothstep(0.0, 1.0, l), contrast), 0.0, 1.0);
+  s = clamp(s + (lc - l), 0.0, 1.0);
+  float h = rgb2hsv(s).x;
+  float wc = smoothstep(0.14, 0.24, h) * (1.0 - smoothstep(0.76, 0.86, h));
+  float f = sat * mix(warmKeep, coolKeep, wc);
+  s = mix(vec3(lc), s, f);
+  s += warmth * vec3(0.055, 0.018, -0.035) * pow(1.0 - lc, 2.0);
+  s = blackOut + clamp(s, 0.0, 1.0) * (whiteOut - blackOut);
+  o = vec4(clamp(s, 0.0, 1.0), 1.0);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name] = gl.getUniformLocation(p, a.name); }
+  return { p, u };
+}
+let pAcc, pGrade;
+try { pAcc = program(FS_ACC); pGrade = program(FS_GRADE); }
+catch (e) { say("Shader error: " + e.message, 0); return; }
+gl.bindVertexArray(gl.createVertexArray());
+
+const srcTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, srcTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+let W = 0, H = 0, levels = 1, acc = [], fbo = [], cur = 0, useFloat = hasFloat;
+function makeTargets(w, h) {
+  acc.forEach(t => gl.deleteTexture(t)); fbo.forEach(f => gl.deleteFramebuffer(f));
+  acc = []; fbo = []; W = w; H = h;
+  levels = Math.floor(Math.log2(Math.max(w, h))) + 1;
+  for (let i = 0; i < 2; i++) {
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texStorage2D(gl.TEXTURE_2D, levels, useFloat ? gl.RGBA16F : gl.RGBA8, w, h);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE && useFloat) {
+      useFloat = false; gl.bindFramebuffer(gl.FRAMEBUFFER, null); return makeTargets(w, h);
+    }
+    acc.push(t); fbo.push(f);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (!useFloat) say("High-precision blending isn't supported here, so long exposures may show banding.", 6000);
+  canvas.width = w; canvas.height = h; fitCanvas();
+  resetAccum = true;
+}
+function fitCanvas() {
+  if (!W) return;
+  const r = stage.getBoundingClientRect();
+  const s = Math.min(r.width / W, r.height / H);
+  canvas.style.width = Math.floor(W * s) + "px"; canvas.style.height = Math.floor(H * s) + "px";
+}
+new ResizeObserver(fitCanvas).observe(stage);
+
+// ---------- sources ----------
+const MAXDIM = 1280;
+const DEMO_WB = [1.3, 1, 0.75]; // neutralizes the demo sky, as a tap would
+let source = "demo", stream = null, newFrame = false, resetAccum = true, needGrade = true;
+
+// demo scene: sea, a sea stack, drifting cloud, a red buoy. Water redrawn with fresh random glints every frame.
+const demo = document.createElement("canvas"); demo.width = 960; demo.height = 720;
+const dctx = demo.getContext("2d");
+function drawDemo(t) {
+  const w = demo.width, h = demo.height, hz = h * 0.46;
+  let g = dctx.createLinearGradient(0, 0, 0, hz);
+  g.addColorStop(0, "#7d9fc8"); g.addColorStop(1, "#c3d3e4");
+  dctx.fillStyle = g; dctx.fillRect(0, 0, w, hz);
+  for (let i = 0; i < 3; i++) {
+    const cx = ((t * 0.012 + i * 0.37) % 1.3 - 0.15) * w, cy = hz * (0.25 + i * 0.18);
+    dctx.save(); dctx.translate(cx, cy); dctx.scale(1, 0.4);
+    const rg = dctx.createRadialGradient(0, 0, 0, 0, 0, 200);
+    rg.addColorStop(0, "rgba(240,244,248,0.55)"); rg.addColorStop(1, "rgba(240,244,248,0)");
+    dctx.fillStyle = rg; dctx.beginPath(); dctx.arc(0, 0, 200, 0, Math.PI * 2); dctx.fill(); dctx.restore();
+  }
+  g = dctx.createLinearGradient(0, hz, 0, h);
+  g.addColorStop(0, "#5f86a8"); g.addColorStop(1, "#2c4d6b");
+  dctx.fillStyle = g; dctx.fillRect(0, hz, w, h - hz);
+  for (let i = 0; i < 420; i++) {
+    const y = hz + Math.pow(Math.random(), 1.6) * (h - hz);
+    const k = (y - hz) / (h - hz);
+    const x = Math.random() * w, len = 8 + k * 70, th = 1 + k * 4;
+    dctx.fillStyle = Math.random() < 0.5 ? `rgba(225,236,248,${0.25 + 0.5 * Math.random()})` : `rgba(18,36,54,${0.3 + 0.4 * Math.random()})`;
+    dctx.fillRect(x, y, len, th);
+  }
+  const rx = w * 0.6, base = h * 0.63;
+  dctx.fillStyle = "#2a2521";
+  dctx.beginPath(); dctx.moveTo(rx - 70, base); dctx.lineTo(rx - 52, base - 130); dctx.lineTo(rx - 20, base - 175);
+  dctx.lineTo(rx + 18, base - 160); dctx.lineTo(rx + 44, base - 90); dctx.lineTo(rx + 75, base); dctx.closePath(); dctx.fill();
+  const wob = Math.sin(t * 2.3) * 4 + (Math.random() - 0.5) * 6;
+  dctx.fillStyle = "#c2412d"; dctx.fillRect(w * 0.27 + wob, h * 0.6 - 18 + Math.sin(t * 3.1) * 3, 12, 22);
+  dctx.fillStyle = "#3a3632"; dctx.fillRect(w * 0.27 + 5 + wob, h * 0.6 - 40 + Math.sin(t * 3.1) * 3, 2, 24);
+}
+
+function currentEl() { return source === "demo" ? demo : video; }
+function srcSize() {
+  const el = currentEl();
+  return source === "demo" ? [el.width, el.height] : [el.videoWidth, el.videoHeight];
+}
+
+function stopStream() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
+function watchVideoFrames() {
+  if (!("requestVideoFrameCallback" in HTMLVideoElement.prototype)) return;
+  const cb = () => { newFrame = true; video.requestVideoFrameCallback(cb); };
+  video.requestVideoFrameCallback(cb);
+}
+watchVideoFrames();
+
+async function startCamera(deviceId) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    say("Live camera isn't available here. Open the hosted version in Safari, or load a clip.", 7000); return;
+  }
+  try {
+    stopStream();
+    const v = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } };
+    if (deviceId) v.deviceId = { exact: deviceId }; else v.facingMode = { ideal: "environment" };
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: v });
+    video.removeAttribute("src"); video.srcObject = stream; await video.play();
+    source = "camera"; resetAccum = true; state.wb = [1, 1, 1];
+    const label = stream.getVideoTracks()[0].label || "Camera";
+    $("hudSource").textContent = label.replace(/^Back\s*/i, "") || "Camera";
+    $("camBtn").textContent = "Restart camera";
+    await listLenses(stream.getVideoTracks()[0].getSettings().deviceId);
+  } catch (e) {
+    const blocked = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
+    say(blocked ? "Camera access was refused in this view. Open the hosted version in Safari, or load a clip you recorded." : "Couldn't start the camera: " + (e.message || e.name), 8000);
+  }
+}
+async function listLenses(activeId) {
+  const sel = $("lens");
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+    const back = devs.filter(d => /back|rear|environment/i.test(d.label));
+    const list = back.length ? back : devs;
+    if (list.length < 2) { sel.hidden = true; return; }
+    sel.innerHTML = "";
+    list.forEach(d => {
+      const o = document.createElement("option"); o.value = d.deviceId;
+      o.textContent = (d.label || "Camera").replace(/^Back\s*/i, "").replace(/ Camera$/i, "") || "Wide";
+      if (d.deviceId === activeId) o.selected = true; sel.appendChild(o);
+    });
+    sel.hidden = false;
+  } catch (e) { sel.hidden = true; }
+}
+$("lens").addEventListener("change", e => startCamera(e.target.value));
+$("camBtn").addEventListener("click", () => startCamera($("lens").hidden ? null : $("lens").value));
+$("clipBtn").addEventListener("click", () => $("clipInput").click());
+$("clipInput").addEventListener("change", async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  stopStream(); video.srcObject = null; video.src = URL.createObjectURL(f);
+  try { await video.play(); source = "clip"; resetAccum = true; state.wb = [1, 1, 1]; $("hudSource").textContent = "Clip: " + f.name.slice(0, 24); }
+  catch (err) { say("This clip couldn't be played: " + (err.message || err.name), 6000); }
+  e.target.value = "";
+});
+$("demoBtn").addEventListener("click", () => {
+  stopStream(); video.pause(); source = "demo"; resetAccum = true; state.wb = DEMO_WB.slice(); $("hudSource").textContent = "Demo scene"; $("lens").hidden = true;
+});
+
+// ---------- tap: white balance from the source, or glow center ----------
+const probe = document.createElement("canvas"); const pctx = probe.getContext("2d", { willReadFrequently: true });
+canvas.addEventListener("pointerdown", e => {
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  if (state.tapMode === "glow") { state.glowC = [x, y]; needGrade = true; say("Glow centered here", 1400); return; }
+  const [sw, sh] = srcSize(); if (!sw) return;
+  const pw = 160, ph = Math.round(160 * sh / sw); probe.width = pw; probe.height = ph;
+  try {
+    pctx.drawImage(currentEl(), 0, 0, pw, ph);
+    const px = Math.round(x * pw), py = Math.round(y * ph), rad = 4;
+    const d = pctx.getImageData(Math.max(0, px - rad), Math.max(0, py - rad), rad * 2 + 1, rad * 2 + 1).data;
+    const lin = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    let R = 0, G = 0, B = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) { R += lin(d[i]); G += lin(d[i + 1]); B += lin(d[i + 2]); n++; }
+    R /= n; G /= n; B /= n;
+    if (R < 0.002 || G < 0.002 || B < 0.002) { say("That spot is too dark to balance on. Tap something brighter.", 3000); return; }
+    state.wb = [G / R, 1, G / B]; needGrade = true;
+    say("White balance set from this spot", 1600);
+  } catch (err) { say("Couldn't read that spot.", 2500); }
+});
+
+// ---------- render loop ----------
+let lastT = performance.now(), lastDemo = 0, fpsCount = 0, fpsT = performance.now(), fps = 0;
+
+function gainsVec() {
+  const t = vals.temp, ti = vals.tint;
+  return [state.wb[0] * Math.exp(0.35 * t), state.wb[1] * Math.exp(-0.25 * ti), state.wb[2] * Math.exp(-0.35 * t)];
+}
+
+function grade() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H);
+  const { p, u } = pGrade; gl.useProgram(p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[cur]); gl.uniform1i(u.acc, 0);
+  gl.uniform3fv(u.gains, gainsVec());
+  gl.uniform1f(u.expo, vals.expo); gl.uniform1f(u.soften, vals.soften);
+  gl.uniform1f(u.blurLod, Math.max(0, Math.log2(Math.max(W, H) / 28)));
+  gl.uniform1f(u.glow, vals.glow); gl.uniform1f(u.aspect, W / H);
+  gl.uniform2fv(u.glowC, state.glowC);
+  gl.uniform1f(u.topD, vals.topD); gl.uniform1f(u.botD, vals.botD);
+  gl.uniform1f(u.sat, vals.sat); gl.uniform1f(u.coolKeep, vals.coolKeep); gl.uniform1f(u.warmKeep, vals.warmKeep);
+  gl.uniform1f(u.contrast, vals.contrast); gl.uniform1f(u.blackOut, vals.black); gl.uniform1f(u.whiteOut, vals.white);
+  gl.uniform1f(u.warmth, vals.warmth); gl.uniform1f(u.bypass, bypass ? 1 : 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  needGrade = false;
+}
+
+function accumulate(alpha) {
+  const el = currentEl();
+  gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, el);
+  const nxt = 1 - cur;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[nxt]); gl.viewport(0, 0, W, H);
+  const { p, u } = pAcc; gl.useProgram(p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, srcTex); gl.uniform1i(u.src, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, acc[cur]); gl.uniform1i(u.prev, 1);
+  gl.uniform1f(u.alpha, alpha);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
+  cur = nxt;
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[cur]); gl.generateMipmap(gl.TEXTURE_2D);
+}
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (source === "demo") {
+    if (now - lastDemo > 32) { drawDemo(now / 1000); lastDemo = now; newFrame = true; }
+  } else if (!("requestVideoFrameCallback" in HTMLVideoElement.prototype)) {
+    if (video.readyState >= 2) newFrame = true;
+  }
+  const [sw, sh] = srcSize();
+  if (!sw || !sh) return;
+  const sc = Math.min(1, MAXDIM / Math.max(sw, sh));
+  const w = Math.round(sw * sc), h = Math.round(sh * sc);
+  if (w !== W || h !== H) makeTargets(w, h);
+
+  const frozen = (state.mode === "rolling" && held) || (state.mode === "shutter" && held);
+  if (newFrame && !frozen) {
+    newFrame = false;
+    const dt = Math.min(0.1, Math.max(0.001, (now - lastT) / 1000)); lastT = now;
+    let alpha;
+    if (resetAccum) { alpha = 1; resetAccum = false; expoN = 1; }
+    else if (state.mode === "shutter" && exposing) { expoN++; alpha = 1 / expoN; }
+    else if (state.mode === "shutter") { alpha = 1; } // live view between exposures
+    else { alpha = 1 - Math.exp(-dt / (state.T / 2)); }
+    accumulate(alpha);
+    needGrade = true;
+    if (state.mode === "shutter" && exposing) {
+      const el = (now - expoStart) / 1000;
+      setProgress(el / state.T); updateHud(el);
+      if (el >= state.T) { exposing = false; held = true; lastExposure = el; setProgress(0); updateShootLabel(); updateHud(); }
+    }
+    fpsCount++;
+  } else { lastT = now; }
+  if (needGrade) grade();
+}
+
+// ---------- save ----------
+let downloads = null;
+if (window.claude && typeof window.claude.use === "function") {
+  window.claude.use("downloads").then(d => { downloads = d; }).catch(() => {});
+}
+$("save").addEventListener("click", () => {
+  grade();
+  canvas.toBlob(async blob => {
+    if (!blob) { say("Couldn't capture the frame.", 3000); return; }
+    const name = "quiet-viewfinder-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19) + ".jpg";
+    if (downloads) {
+      try { await downloads.save({ filename: name, data: blob }); say("Saved", 1500); }
+      catch (e) { if (e && e.code !== "declined") say("Saving isn't available in this view.", 3000); }
+      return;
+    }
+    const file = new File([blob], name, { type: "image/jpeg" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); } catch (e) {}
+      return;
+    }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }, "image/jpeg", 0.92);
+});
+
+// ---------- restore and start ----------
+const savedVals = load("vals"), savedPreset = load("preset"), savedT = load("T");
+if (savedVals) { SLIDERS.forEach(s => { if (typeof savedVals[s.id] === "number") vals[s.id] = savedVals[s.id]; }); state.preset = savedPreset; setT(savedT || 4); syncSliders(); markPresetButtons(); }
+else applyPreset("Still water");
+state.wb = DEMO_WB.slice();
+updateShootLabel(); updateHud();
+document.addEventListener("visibilitychange", () => { if (!document.hidden) resetAccum = true; });
+requestAnimationFrame(frame);
+})();
+</script>
